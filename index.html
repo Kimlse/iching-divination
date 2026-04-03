@@ -144,6 +144,48 @@
       line-height: 1.6;
     }
 
+    /* ── BTC Live Panel ── */
+    .btc-panel {
+      margin-bottom: 24px;
+      display: none;
+    }
+    .btc-panel.visible { display: block; }
+    .btc-info {
+      background: #2a1f10;
+      border: 1px solid #4a3520;
+      border-radius: 6px;
+      padding: 20px;
+      text-align: center;
+    }
+    .btc-price-display {
+      font-size: 28px;
+      letter-spacing: 2px;
+      margin-bottom: 8px;
+    }
+    .btc-price-display .currency { color: #8b7355; font-size: 16px; }
+    .btc-meta {
+      font-size: 12px;
+      color: #8b7355;
+      line-height: 1.8;
+    }
+    .btc-countdown {
+      display: inline-block;
+      background: #1a1208;
+      border: 1px solid #3a2a15;
+      border-radius: 4px;
+      padding: 4px 12px;
+      margin-top: 8px;
+      font-size: 13px;
+      color: #d4a853;
+    }
+    .btc-status {
+      margin-top: 8px;
+      font-size: 11px;
+    }
+    .btc-status.connected { color: #27ae60; }
+    .btc-status.disconnected { color: #c0392b; }
+    .btc-status.loading { color: #8b7355; }
+
     /* ── Cast Button ── */
     .cast-section {
       margin-bottom: 40px;
@@ -476,6 +518,10 @@
           <div class="card-title">梅花易数</div>
           <div class="card-desc">以数起卦<br>邵雍先天法</div>
         </div>
+        <div class="method-card" onclick="selectMethod(this)" data-method="btc">
+          <div class="card-title">BTC实时卦</div>
+          <div class="card-desc">五分钟K线开盘价<br>自动梅花易数</div>
+        </div>
       </div>
     </div>
 
@@ -495,8 +541,20 @@
       <div class="meihua-hint">心中默想所问之事，随意输入数字。仅输一个数时，以当前时辰为第二个数。</div>
     </div>
 
+    <!-- BTC Live Panel (hidden by default) -->
+    <div class="btc-panel" id="btcPanel">
+      <div class="btc-info">
+        <div class="btc-price-display"><span class="currency">BTC </span><span id="btcPriceText">加载中...</span></div>
+        <div class="btc-meta">
+          <span>5分钟K线开盘价 · </span><span id="btcTimeText">--:--</span>
+        </div>
+        <div class="btc-countdown" id="btcCountdown">下根K线: --:--</div>
+        <div class="btc-status loading" id="btcStatus">正在连接...</div>
+      </div>
+    </div>
+
     <!-- Cast Button -->
-    <div class="cast-section">
+    <div class="cast-section" id="castSection">
       <button class="cast-btn" onclick="castDivination()">起 卦</button>
     </div>
 
@@ -1637,8 +1695,19 @@
       document.querySelectorAll(".method-card").forEach(card => card.classList.remove("active"));
       el.classList.add("active");
       currentMethod = el.dataset.method;
-      // Show/hide number input for meihua
+      // Show/hide panels
       document.getElementById("meihuaInput").style.display = currentMethod === "plum" ? "block" : "none";
+      var btcPanel = document.getElementById("btcPanel");
+      var castSection = document.getElementById("castSection");
+      if (currentMethod === "btc") {
+        btcPanel.classList.add("visible");
+        castSection.style.display = "none";
+        startBtcMode();
+      } else {
+        btcPanel.classList.remove("visible");
+        castSection.style.display = "";
+        stopBtcMode();
+      }
     }
 
     // ── Coin toss divination ──
@@ -2005,6 +2074,226 @@
       document.getElementById("history").textContent = hexData.history;
 
       // Scroll to result
+      document.getElementById("resultSection").scrollIntoView({ behavior: "smooth" });
+    }
+
+    // ═══════════════════════════════════════
+    // BTC 实时卦模式
+    // ═══════════════════════════════════════
+    var _btcTimer = null;
+    var _btcCountdownTimer = null;
+    var _btcCurrentOpen = null;
+    var _btcCurrentKlineStart = null;
+
+    function startBtcMode() {
+      fetchBtcAndCast();
+      // 每10秒检查是否有新K线
+      _btcTimer = setInterval(fetchBtcAndCast, 10000);
+      // 倒计时每秒更新
+      _btcCountdownTimer = setInterval(updateBtcCountdown, 1000);
+    }
+
+    function stopBtcMode() {
+      if (_btcTimer) { clearInterval(_btcTimer); _btcTimer = null; }
+      if (_btcCountdownTimer) { clearInterval(_btcCountdownTimer); _btcCountdownTimer = null; }
+    }
+
+    function fetchBtcAndCast() {
+      var statusEl = document.getElementById("btcStatus");
+      statusEl.className = "btc-status loading";
+      statusEl.textContent = "正在获取数据...";
+
+      // Binance API: 5分钟K线，取最新1根
+      fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=5m&limit=1")
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (!data || !data[0]) {
+            statusEl.className = "btc-status disconnected";
+            statusEl.textContent = "数据获取失败";
+            return;
+          }
+          var kline = data[0];
+          var openTime = kline[0];       // K线开盘时间戳(ms)
+          var openPrice = parseFloat(kline[1]); // 开盘价
+
+          statusEl.className = "btc-status connected";
+          statusEl.textContent = "Binance · 实时连接";
+
+          // 更新价格显示
+          document.getElementById("btcPriceText").textContent = "$" + openPrice.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+          // 更新时间显示
+          var klineDate = new Date(openTime);
+          var timeStr = klineDate.getHours().toString().padStart(2, "0") + ":" + klineDate.getMinutes().toString().padStart(2, "0");
+          document.getElementById("btcTimeText").textContent = timeStr + " 开盘";
+
+          _btcCurrentKlineStart = openTime;
+
+          // 只在开盘价变化时重新起卦（新K线）
+          if (openPrice !== _btcCurrentOpen) {
+            _btcCurrentOpen = openPrice;
+            btcCast(openPrice, timeStr);
+          }
+        })
+        .catch(function() {
+          statusEl.className = "btc-status disconnected";
+          statusEl.textContent = "网络错误，10秒后重试";
+        });
+    }
+
+    function updateBtcCountdown() {
+      if (!_btcCurrentKlineStart) return;
+      var nextKline = _btcCurrentKlineStart + 5 * 60 * 1000; // 下根K线开始时间
+      var now = Date.now();
+      var diff = Math.max(0, Math.floor((nextKline - now) / 1000));
+      var min = Math.floor(diff / 60);
+      var sec = diff % 60;
+      document.getElementById("btcCountdown").textContent = "下根K线: " + min + ":" + sec.toString().padStart(2, "0");
+    }
+
+    function btcCast(openPrice, timeStr) {
+      // 用开盘价的整数部分作为梅花易数的数字
+      var priceInt = Math.floor(openPrice);
+
+      // 用价格的前几位和后几位分别作为两个数
+      var priceStr = priceInt.toString();
+      var n1, n2;
+      if (priceStr.length >= 4) {
+        // 例如 84523 → n1=845, n2=23
+        var mid = Math.ceil(priceStr.length / 2);
+        n1 = parseInt(priceStr.substring(0, mid), 10);
+        n2 = parseInt(priceStr.substring(mid), 10);
+        if (n2 === 0) n2 = 1;
+      } else {
+        n1 = priceInt;
+        n2 = null;
+      }
+
+      // 用梅花易数算法起卦
+      var upperNum, lowerNum, movingLine;
+      if (n2 !== null) {
+        upperNum = n1 % 8; if (upperNum === 0) upperNum = 8;
+        lowerNum = n2 % 8; if (lowerNum === 0) lowerNum = 8;
+        movingLine = (n1 + n2) % 6; if (movingLine === 0) movingLine = 6;
+      } else {
+        var hour = new Date().getHours();
+        var shiChen = Math.floor((hour + 1) % 24 / 2) + 1;
+        upperNum = n1 % 8; if (upperNum === 0) upperNum = 8;
+        lowerNum = (n1 + shiChen) % 8; if (lowerNum === 0) lowerNum = 8;
+        movingLine = (n1 + shiChen) % 6; if (movingLine === 0) movingLine = 6;
+      }
+
+      // 构建六爻
+      var lowerBagua = BAGUA[lowerNum].lines;
+      var upperBagua = BAGUA[upperNum].lines;
+      var lines = [];
+      for (var i = 0; i < 3; i++) {
+        lines.push({ value: lowerBagua[i] ? 7 : 8, isYang: !!lowerBagua[i], isMoving: false });
+      }
+      for (var i = 0; i < 3; i++) {
+        lines.push({ value: upperBagua[i] ? 7 : 8, isYang: !!upperBagua[i], isMoving: false });
+      }
+      var ml = lines[movingLine - 1];
+      ml.isMoving = true;
+      ml.value = ml.isYang ? 9 : 6;
+
+      // 渲染结果（复用 castDivination 的渲染逻辑）
+      var hexData = getHexagramData(lines);
+      if (!hexData) return;
+
+      var hasMoving = lines.some(function(l) { return l.isMoving; });
+
+      document.getElementById("resultSection").classList.add("visible");
+      document.getElementById("hexName").textContent = hexData.name;
+      var hexagramNameEl = document.getElementById("hexagramName");
+      if (hexagramNameEl) hexagramNameEl.textContent = hexData.name;
+
+      renderYaoLines(document.getElementById("yaoLines"), lines);
+
+      document.getElementById("judgement").textContent = hexData.judgement;
+      document.getElementById("judgementExplain").textContent = hexData.judgement_explain;
+
+      var imageEl = document.getElementById("imageText");
+      if (imageEl) imageEl.textContent = hexData.image;
+
+      // 爻辞
+      var lineReadings = document.getElementById("lineReadings");
+      lineReadings.textContent = "";
+      hexData.lines.forEach(function(line, i) {
+        var div = document.createElement("div");
+        div.className = "line-reading" + (lines[i].isMoving ? " moving" : "");
+        var pos = document.createElement("div");
+        pos.className = "position";
+        pos.textContent = line.position + (lines[i].isMoving ? " ◉动爻" : "");
+        var txt = document.createElement("div");
+        txt.className = "line-text";
+        txt.textContent = line.text;
+        var exp = document.createElement("div");
+        exp.className = "line-explain";
+        exp.textContent = line.explain;
+        div.appendChild(pos);
+        div.appendChild(txt);
+        div.appendChild(exp);
+        lineReadings.appendChild(div);
+      });
+
+      // 变卦
+      var changedSection = document.getElementById("changedSection");
+      if (hasMoving) {
+        changedSection.style.display = "";
+        var changedLines = getChangedLines(lines);
+        var changedData = getHexagramData(changedLines);
+        if (changedData) {
+          document.getElementById("changedName").textContent = changedData.name;
+          renderYaoLines(document.getElementById("changedYaoLines"), changedLines, false);
+          document.getElementById("changedJudgement").textContent = changedData.judgement;
+          document.getElementById("changedJudgementExplain").textContent = changedData.judgement_explain;
+        }
+      } else {
+        changedSection.style.display = "none";
+      }
+
+      // 互卦/错卦/综卦
+      var relatedEl = document.getElementById("relatedHexagrams");
+      relatedEl.textContent = "";
+      [{ label: "互卦", fn: getHuGua }, { label: "错卦", fn: getCuoGua }, { label: "综卦", fn: getZongGua }].forEach(function(rel) {
+        var relLines = rel.fn(lines);
+        var relData = getHexagramData(relLines);
+        var div = document.createElement("div");
+        div.className = "related-hex";
+        var lbl = document.createElement("div");
+        lbl.className = "rel-label";
+        lbl.textContent = rel.label;
+        div.appendChild(lbl);
+        var miniYao = document.createElement("div");
+        miniYao.className = "mini-yao";
+        renderMiniYao(miniYao, relLines);
+        div.appendChild(miniYao);
+        var nm = document.createElement("div");
+        nm.className = "rel-name";
+        nm.textContent = relData ? relData.name : "—";
+        div.appendChild(nm);
+        relatedEl.appendChild(div);
+      });
+
+      // 象征
+      var upper = getTrigramNum(lines.slice(3, 6));
+      var lower = getTrigramNum(lines.slice(0, 3));
+      var symbolRow = document.getElementById("symbolRow");
+      symbolRow.textContent = "";
+      [{ label: "上卦", num: upper }, { label: "下卦", num: lower }].forEach(function(s) {
+        var bagua = BAGUA[s.num];
+        var item = document.createElement("div");
+        item.className = "symbol-item";
+        var sl = document.createElement("div"); sl.className = "sym-label"; sl.textContent = s.label;
+        var sv = document.createElement("div"); sv.className = "sym-value"; sv.textContent = bagua.symbol + " " + bagua.name;
+        var sa = document.createElement("div"); sa.className = "sym-attr"; sa.textContent = bagua.nature + " · " + bagua.attribute;
+        item.appendChild(sl); item.appendChild(sv); item.appendChild(sa);
+        symbolRow.appendChild(item);
+      });
+      document.getElementById("symbolism").textContent = hexData.symbolism;
+      document.getElementById("history").textContent = hexData.history;
+
       document.getElementById("resultSection").scrollIntoView({ behavior: "smooth" });
     }
   </script>
