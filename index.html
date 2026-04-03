@@ -546,7 +546,7 @@
       <div class="btc-info">
         <div class="btc-price-display"><span class="currency">BTC </span><span id="btcPriceText">加载中...</span></div>
         <div class="btc-meta">
-          <span>5分钟K线开盘价 · </span><span id="btcTimeText">--:--</span>
+          <span>Pyth · 5分钟K线开盘价 · </span><span id="btcTimeText">--:--</span>
         </div>
         <div class="btc-countdown" id="btcCountdown">下根K线: --:--</div>
         <div class="btc-status loading" id="btcStatus">正在连接...</div>
@@ -2084,6 +2084,7 @@
     var _btcCountdownTimer = null;
     var _btcCurrentOpen = null;
     var _btcCurrentKlineStart = null;
+    var _btcLastKlineStart = null;
 
     function startBtcMode() {
       fetchBtcAndCast();
@@ -2098,41 +2099,56 @@
       if (_btcCountdownTimer) { clearInterval(_btcCountdownTimer); _btcCountdownTimer = null; }
     }
 
+    var BTC_PYTH_ID = "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43";
+
     function fetchBtcAndCast() {
       var statusEl = document.getElementById("btcStatus");
       statusEl.className = "btc-status loading";
       statusEl.textContent = "正在获取数据...";
 
-      // Binance API: 5分钟K线，取最新1根
-      fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=5m&limit=1")
+      // 获取当前5分钟K线的开盘时间戳
+      var now = Math.floor(Date.now() / 1000);
+      var klineStart = Math.floor(now / 300) * 300; // 当前5分钟周期起点
+
+      // Pyth REST API: 获取K线开盘时刻的价格
+      var url = "https://hermes.pyth.network/v2/updates/price/latest?ids[]=" + BTC_PYTH_ID + "&publish_time=" + klineStart;
+
+      fetch(url)
         .then(function(r) { return r.json(); })
         .then(function(data) {
-          if (!data || !data[0]) {
-            statusEl.className = "btc-status disconnected";
-            statusEl.textContent = "数据获取失败";
-            return;
+          if (!data || !data.parsed || !data.parsed[0]) {
+            // fallback: 获取最新价格
+            return fetch("https://hermes.pyth.network/v2/updates/price/latest?ids[]=" + BTC_PYTH_ID)
+              .then(function(r) { return r.json(); })
+              .then(function(d) {
+                if (!d || !d.parsed || !d.parsed[0]) throw new Error("no data");
+                return { data: d, isLatest: true };
+              });
           }
-          var kline = data[0];
-          var openTime = kline[0];       // K线开盘时间戳(ms)
-          var openPrice = parseFloat(kline[1]); // 开盘价
+          return { data: data, isLatest: false };
+        })
+        .then(function(result) {
+          var p = result.data.parsed[0].price;
+          var price = parseInt(p.price) * Math.pow(10, parseInt(p.expo));
 
           statusEl.className = "btc-status connected";
-          statusEl.textContent = "Binance · 实时连接";
+          statusEl.textContent = "Pyth Network · " + (result.isLatest ? "最新价格" : "开盘价格");
 
           // 更新价格显示
-          document.getElementById("btcPriceText").textContent = "$" + openPrice.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+          document.getElementById("btcPriceText").textContent = "$" + price.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
           // 更新时间显示
-          var klineDate = new Date(openTime);
+          var klineDate = new Date(klineStart * 1000);
           var timeStr = klineDate.getHours().toString().padStart(2, "0") + ":" + klineDate.getMinutes().toString().padStart(2, "0");
           document.getElementById("btcTimeText").textContent = timeStr + " 开盘";
 
-          _btcCurrentKlineStart = openTime;
+          _btcCurrentKlineStart = klineStart * 1000;
 
-          // 只在开盘价变化时重新起卦（新K线）
-          if (openPrice !== _btcCurrentOpen) {
-            _btcCurrentOpen = openPrice;
-            btcCast(openPrice, timeStr);
+          // 只在K线周期变化时重新起卦
+          if (klineStart !== _btcLastKlineStart) {
+            _btcLastKlineStart = klineStart;
+            _btcCurrentOpen = price;
+            btcCast(price, timeStr);
           }
         })
         .catch(function() {
