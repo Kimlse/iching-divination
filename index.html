@@ -144,6 +144,38 @@
       line-height: 1.6;
     }
 
+    /* ── Category Selection ── */
+    .category-section {
+      margin-bottom: 24px;
+    }
+    .category-cards {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 12px;
+    }
+    .category-card {
+      background: #2a1f10;
+      border: 1px solid #4a3520;
+      border-radius: 4px;
+      padding: 8px 16px;
+      font-size: 14px;
+      color: #8b7355;
+      cursor: pointer;
+      font-family: inherit;
+      transition: border-color 0.2s, color 0.2s, background 0.2s;
+      user-select: none;
+    }
+    .category-card:hover {
+      border-color: #8b7355;
+      color: #d4a853;
+    }
+    .category-card.active {
+      border-color: #d4a853;
+      color: #d4a853;
+      background: #3a2a15;
+    }
+
     /* ── BTC Live Panel ── */
     .btc-panel {
       margin-bottom: 24px;
@@ -553,6 +585,18 @@
       </div>
     </div>
 
+    <!-- Question Category -->
+    <div class="category-section">
+      <div class="method-label">所问何事</div>
+      <div class="category-cards">
+        <div class="category-card active" data-cat="general" onclick="selectCategory(this)">综合</div>
+        <div class="category-card" data-cat="love" onclick="selectCategory(this)">感情</div>
+        <div class="category-card" data-cat="career" onclick="selectCategory(this)">事业</div>
+        <div class="category-card" data-cat="wealth" onclick="selectCategory(this)">财运</div>
+        <div class="category-card" data-cat="health" onclick="selectCategory(this)">健康</div>
+      </div>
+    </div>
+
     <!-- Cast Button -->
     <div class="cast-section" id="castSection">
       <button class="cast-btn" onclick="castDivination()">起 卦</button>
@@ -616,6 +660,12 @@
       <div class="reading-block" id="blockDiangu">
         <div class="block-title">历 史 典 故</div>
         <div class="block-content" id="history"></div>
+      </div>
+
+      <!-- 专项解读 (非综合模式时显示) -->
+      <div class="reading-block" id="categoryBlock" style="display:none;">
+        <div class="block-title" id="categoryTitle">专 项 解 读</div>
+        <div class="block-content" id="categoryReading"></div>
       </div>
 
     </div><!-- /.result-section -->
@@ -2073,8 +2123,42 @@
       // Set history
       document.getElementById("history").textContent = hexData.history;
 
+      // Category-specific reading
+      renderCategoryReading(lines);
+
       // Scroll to result
       document.getElementById("resultSection").scrollIntoView({ behavior: "smooth" });
+    }
+
+    function renderCategoryReading(lines) {
+      var catBlock = document.getElementById("categoryBlock");
+      var catTitle = document.getElementById("categoryTitle");
+      var catReading = document.getElementById("categoryReading");
+      var reading = getCategoryReading(lines, currentCategory);
+      if (reading) {
+        var catNames = { love: "感 情 运 势", career: "事 业 运 势", wealth: "财 运 分 析", health: "健 康 提 示" };
+        catTitle.textContent = catNames[currentCategory] || "专 项 解 读";
+        catReading.textContent = "";
+        // 按换行分段显示
+        reading.split("\n").forEach(function(line) {
+          var p = document.createElement("div");
+          p.textContent = line;
+          if (line.indexOf("【") === 0) {
+            p.style.fontSize = "16px";
+            p.style.marginBottom = "8px";
+            p.style.letterSpacing = "2px";
+          } else if (line.indexOf("·") === 0) {
+            p.style.paddingLeft = "12px";
+            p.style.lineHeight = "2";
+          } else {
+            p.style.lineHeight = "2";
+          }
+          catReading.appendChild(p);
+        });
+        catBlock.style.display = "";
+      } else {
+        catBlock.style.display = "none";
+      }
     }
 
     // ═══════════════════════════════════════
@@ -2097,6 +2181,133 @@
     function stopBtcMode() {
       if (_btcTimer) { clearInterval(_btcTimer); _btcTimer = null; }
       if (_btcCountdownTimer) { clearInterval(_btcCountdownTimer); _btcCountdownTimer = null; }
+    }
+
+    // ═══════════════════════════════════════
+    // 问事类型
+    // ═══════════════════════════════════════
+    var currentCategory = "general";
+
+    function selectCategory(el) {
+      document.querySelectorAll(".category-card").forEach(function(c) { c.classList.remove("active"); });
+      el.classList.add("active");
+      currentCategory = el.dataset.cat;
+    }
+
+    // 八卦在各领域的象征含义
+    var TRIGRAM_MEANINGS = {
+      love: {
+        1: { trait: "阳刚主动", good: "真诚热烈，勇于追求", bad: "过于强势，不懂温柔" },
+        2: { trait: "喜悦开朗", good: "甜蜜愉快，善于表达", bad: "口舌是非，轻浮不定" },
+        3: { trait: "热情似火", good: "一见钟情，浓情蜜意", bad: "来得快去得快，易生嫉妒" },
+        4: { trait: "雷厉风行", good: "主动出击，一击即中", bad: "来去匆匆，难以持久" },
+        5: { trait: "温柔随和", good: "细水长流，默默守护", bad: "优柔寡断，暧昧不明" },
+        6: { trait: "深沉内敛", good: "用情至深，忠诚可靠", bad: "心事重重，沟通不畅" },
+        7: { trait: "稳重踏实", good: "踏实可靠，安稳长久", bad: "过于保守，缺少浪漫" },
+        8: { trait: "温柔包容", good: "包容大度，相濡以沫", bad: "过于隐忍，失去自我" }
+      },
+      career: {
+        1: { trait: "领导进取", good: "事业亨通，贵人相助", bad: "刚愎自用，树敌过多" },
+        2: { trait: "人际圆融", good: "团队和谐，合作顺利", bad: "口说无凭，缺少实干" },
+        3: { trait: "才华出众", good: "名声远播，业绩亮眼", bad: "华而不实，虚名误事" },
+        4: { trait: "开拓创新", good: "新机遇涌现，破旧立新", bad: "冒进失误，根基不稳" },
+        5: { trait: "顺势而为", good: "贵人引荐，水到渠成", bad: "随波逐流，错失良机" },
+        6: { trait: "以柔克刚", good: "暗中积蓄，厚积薄发", bad: "困难重重，进展缓慢" },
+        7: { trait: "稳扎稳打", good: "根基扎实，步步为营", bad: "固步自封，错过时机" },
+        8: { trait: "厚德载物", good: "广积人脉，大器晚成", bad: "缺少魄力，难以突破" }
+      },
+      wealth: {
+        1: { trait: "正财旺盛", good: "收入丰厚，投资得利", bad: "开销过大，财来财去" },
+        2: { trait: "偏财运佳", good: "意外之财，投机获利", bad: "贪小失大，破财之象" },
+        3: { trait: "名利双收", good: "因名得利，品牌溢价", bad: "虚荣消费，入不敷出" },
+        4: { trait: "快进快出", good: "短线获利，速战速决", bad: "来去如风，守不住财" },
+        5: { trait: "细水长流", good: "稳定收入，理财得当", bad: "收益微薄，不够果断" },
+        6: { trait: "暗财运旺", good: "低调生财，逢凶化吉", bad: "资金被套，周转困难" },
+        7: { trait: "积少成多", good: "储蓄见效，不动产利", bad: "守财过紧，缺少增长" },
+        8: { trait: "广纳财源", good: "多方进财，贵人送财", bad: "散财过多，慈善过度" }
+      },
+      health: {
+        1: { trait: "精力充沛", good: "体力旺盛，头脑清明", bad: "注意头部、心脑血管" },
+        2: { trait: "呼吸畅通", good: "心情愉悦，口腔健康", bad: "注意呼吸道、牙齿口腔" },
+        3: { trait: "目明心亮", good: "视力良好，心血充盈", bad: "注意眼睛、心脏问题" },
+        4: { trait: "行动有力", good: "四肢灵活，肝胆健旺", bad: "注意足部、肝胆问题" },
+        5: { trait: "气息调和", good: "免疫力强，睡眠良好", bad: "注意风寒感冒、神经衰弱" },
+        6: { trait: "肾水充盈", good: "精力恢复快，代谢正常", bad: "注意肾脏、泌尿系统" },
+        7: { trait: "筋骨强健", good: "骨骼健壮，体态端正", bad: "注意关节、脊椎问题" },
+        8: { trait: "脾胃和顺", good: "消化良好，营养吸收佳", bad: "注意脾胃、消化系统" }
+      }
+    };
+
+    // 根据卦象动爻数量和阴阳比例判断吉凶程度
+    function getFortuneLevel(lines) {
+      var yangCount = lines.filter(function(l) { return l.isYang; }).length;
+      var movingCount = lines.filter(function(l) { return l.isMoving; }).length;
+      // 阴阳平衡(3阳3阴)最吉，动爻越少越稳
+      var balance = 3 - Math.abs(yangCount - 3); // 0-3, 3最平衡
+      var stability = 3 - Math.min(movingCount, 3); // 0-3, 3最稳定
+      var score = balance + stability; // 0-6
+      if (score >= 5) return "大吉";
+      if (score >= 4) return "吉";
+      if (score >= 3) return "中平";
+      if (score >= 2) return "小凶";
+      return "凶";
+    }
+
+    function getCategoryReading(lines, category) {
+      if (category === "general") return null;
+
+      var upper = getTrigramNum(lines.slice(3, 6));
+      var lower = getTrigramNum(lines.slice(0, 3));
+      var meanings = TRIGRAM_MEANINGS[category];
+      if (!meanings) return null;
+
+      var upperM = meanings[upper];
+      var lowerM = meanings[lower];
+      var fortune = getFortuneLevel(lines);
+      var hasMoving = lines.some(function(l) { return l.isMoving; });
+
+      var catNames = { love: "感情", career: "事业", wealth: "财运", health: "健康" };
+      var catName = catNames[category];
+
+      // 根据吉凶组合解读
+      var isGood = fortune === "大吉" || fortune === "吉";
+      var isBad = fortune === "凶" || fortune === "小凶";
+
+      var reading = "【" + catName + "运势：" + fortune + "】\n\n";
+
+      reading += "上卦" + BAGUA[upper].name + "（" + BAGUA[upper].nature + "），" + upperM.trait + "；";
+      reading += "下卦" + BAGUA[lower].name + "（" + BAGUA[lower].nature + "），" + lowerM.trait + "。\n\n";
+
+      if (isGood) {
+        reading += "此卦于" + catName + "一事，整体向好。\n";
+        reading += "· " + upperM.good + "\n";
+        reading += "· " + lowerM.good + "\n\n";
+        if (hasMoving) {
+          reading += "有动爻，事情正在变化中，宜顺势而为，把握时机。";
+        } else {
+          reading += "无动爻，局面稳定，宜守正待时，自然亨通。";
+        }
+      } else if (isBad) {
+        reading += "此卦于" + catName + "一事，需多加留意。\n";
+        reading += "· " + upperM.bad + "\n";
+        reading += "· " + lowerM.bad + "\n\n";
+        if (hasMoving) {
+          reading += "有动爻，变数尚存，转机可期。退一步海阔天空，不宜强求。";
+        } else {
+          reading += "无动爻，暂时难以改变，宜静观其变，韬光养晦。";
+        }
+      } else {
+        reading += "此卦于" + catName + "一事，不好不坏，中平之象。\n";
+        reading += "· 利处：" + upperM.good + "\n";
+        reading += "· 弊处：" + lowerM.bad + "\n\n";
+        if (hasMoving) {
+          reading += "有动爻，局势将变。谨慎行事，可趋吉避凶。";
+        } else {
+          reading += "无动爻，维持现状即可，不必强行改变。";
+        }
+      }
+
+      return reading;
     }
 
     var BTC_PYTH_ID = "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43";
@@ -2299,6 +2510,8 @@
       });
       document.getElementById("symbolism").textContent = hexData.symbolism;
       document.getElementById("history").textContent = hexData.history;
+
+      renderCategoryReading(lines);
 
       document.getElementById("resultSection").scrollIntoView({ behavior: "smooth" });
     }
