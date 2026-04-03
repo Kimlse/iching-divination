@@ -2325,32 +2325,44 @@
       statusEl.className = "btc-status loading";
       statusEl.textContent = "正在获取开盘价...";
 
-      // Pyth REST API: 获取最新价格作为新K线的开盘价
-      fetch("https://hermes.pyth.network/v2/updates/price/latest?ids[]=" + BTC_PYTH_ID)
+      // Pyth Benchmarks API: 获取真正的5分钟K线OHLC数据
+      var fromTs = klineStart;
+      var toTs = now + 1;
+      var url = "https://benchmarks.pyth.network/v1/shims/tradingview/history?symbol=Crypto.BTC/USD&resolution=5&from=" + fromTs + "&to=" + toTs;
+
+      fetch(url)
         .then(function(r) { return r.json(); })
         .then(function(data) {
-          if (!data || !data.parsed || !data.parsed[0]) throw new Error("no data");
+          if (!data || data.s !== "ok" || !data.t || data.t.length === 0) throw new Error("no data");
 
-          var p = data.parsed[0].price;
-          var price = parseInt(p.price) * Math.pow(10, parseInt(p.expo));
+          // 找到当前K线的开盘价
+          var idx = -1;
+          for (var i = 0; i < data.t.length; i++) {
+            if (data.t[i] === klineStart) { idx = i; break; }
+          }
+          // 如果没有精确匹配，用最后一根K线
+          if (idx === -1) idx = data.t.length - 1;
 
-          // 锁定这个周期的开盘价，直到下一根K线才会更新
+          var openPrice = data.o[idx];
+          var klineTs = data.t[idx];
+
+          // 锁定这个周期的开盘价
           _btcLastKlineStart = klineStart;
-          _btcCurrentOpen = price;
+          _btcCurrentOpen = openPrice;
           _btcCurrentKlineStart = klineStart * 1000;
 
           statusEl.className = "btc-status connected";
           statusEl.textContent = "Pyth Network · 开盘价已锁定";
 
           // 更新价格显示
-          document.getElementById("btcPriceText").textContent = "$" + price.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+          document.getElementById("btcPriceText").textContent = "$" + openPrice.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
           // 更新时间显示
           var klineDate = new Date(klineStart * 1000);
           var timeStr = klineDate.getHours().toString().padStart(2, "0") + ":" + klineDate.getMinutes().toString().padStart(2, "0");
           document.getElementById("btcTimeText").textContent = timeStr + " 开盘";
 
-          btcCast(price, timeStr);
+          btcCast(openPrice, timeStr);
         })
         .catch(function() {
           statusEl.className = "btc-status disconnected";
