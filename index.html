@@ -144,6 +144,67 @@
       line-height: 1.6;
     }
 
+    /* ── BTC Prediction ── */
+    .prediction-direction {
+      font-size: 22px;
+      text-align: center;
+      letter-spacing: 4px;
+      margin-bottom: 16px;
+      padding: 12px;
+      border-radius: 6px;
+      background: #1a1208;
+      border: 1px solid #3a2a15;
+    }
+    .prediction-direction.up { color: #27ae60; border-color: #1e7a46; }
+    .prediction-direction.down { color: #c0392b; border-color: #8b2a20; }
+    .prediction-direction.neutral { color: #d4a853; border-color: #4a3520; }
+    .prediction-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .prediction-bar .bar-label {
+      font-size: 12px;
+      width: 24px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .prediction-bar .bar-label.up-label { color: #27ae60; }
+    .prediction-bar .bar-label.down-label { color: #c0392b; }
+    .prediction-bar .bar-track {
+      flex: 1;
+      height: 8px;
+      background: #1a1208;
+      border-radius: 4px;
+      overflow: hidden;
+      display: flex;
+    }
+    .prediction-bar .bar-fill-up {
+      background: #27ae60;
+      height: 100%;
+      transition: width 0.3s;
+    }
+    .prediction-bar .bar-fill-down {
+      background: #c0392b;
+      height: 100%;
+      transition: width 0.3s;
+    }
+    .prediction-detail {
+      font-size: 13px;
+      color: #8b7355;
+      line-height: 2;
+      margin-top: 12px;
+    }
+    .prediction-disclaimer {
+      font-size: 11px;
+      color: #5a4530;
+      margin-top: 12px;
+      padding-top: 8px;
+      border-top: 1px solid #2a1f10;
+      text-align: center;
+    }
+
     /* ── Category Selection ── */
     .category-section {
       margin-bottom: 24px;
@@ -666,6 +727,12 @@
       <div class="reading-block" id="categoryBlock" style="display:none;">
         <div class="block-title" id="categoryTitle">专 项 解 读</div>
         <div class="block-content" id="categoryReading"></div>
+      </div>
+
+      <!-- BTC涨跌倾向 (仅BTC模式显示) -->
+      <div class="reading-block" id="btcPredictionBlock" style="display:none;">
+        <div class="block-title">涨 跌 倾 向</div>
+        <div class="block-content" id="btcPrediction"></div>
       </div>
 
     </div><!-- /.result-section -->
@@ -2126,6 +2193,9 @@
       // Category-specific reading
       renderCategoryReading(lines);
 
+      // BTC prediction (only in BTC mode)
+      renderBtcPrediction(lines);
+
       // Scroll to result
       document.getElementById("resultSection").scrollIntoView({ behavior: "smooth" });
     }
@@ -2162,6 +2232,151 @@
     }
 
     // ═══════════════════════════════════════
+    // BTC 涨跌倾向预测
+    // ═══════════════════════════════════════
+    var YANG_TRIGRAMS = {1:true, 4:true, 6:true, 7:true}; // 乾震坎艮
+
+    function renderBtcPrediction(lines) {
+      var block = document.getElementById("btcPredictionBlock");
+      var container = document.getElementById("btcPrediction");
+
+      if (currentMethod !== "btc") {
+        block.style.display = "none";
+        return;
+      }
+      block.style.display = "";
+      container.textContent = "";
+
+      var upper = getTrigramNum(lines.slice(3, 6));
+      var lower = getTrigramNum(lines.slice(0, 3));
+      var yangCount = lines.filter(function(l) { return l.isYang; }).length;
+      var movingIdx = -1;
+      for (var i = 0; i < 6; i++) { if (lines[i].isMoving) { movingIdx = i; break; } }
+
+      // 计算涨跌分数
+      var upScore = 0, downScore = 0;
+
+      // 上卦(外势): 阳卦+2涨, 阴卦+2跌
+      if (YANG_TRIGRAMS[upper]) upScore += 2; else downScore += 2;
+      // 下卦(内基): 阳卦+1涨, 阴卦+1跌
+      if (YANG_TRIGRAMS[lower]) upScore += 1; else downScore += 1;
+      // 阳爻比例
+      if (yangCount >= 4) upScore += 1;
+      else if (yangCount <= 2) downScore += 1;
+      // 动爻方向: 阳→阴=跌, 阴→阳=涨
+      if (movingIdx >= 0) {
+        if (lines[movingIdx].isYang) downScore += 2; else upScore += 2;
+      }
+      // 变卦上卦
+      var changedLines = getChangedLines(lines);
+      var changedUpper = getTrigramNum(changedLines.slice(3, 6));
+      if (YANG_TRIGRAMS[changedUpper]) upScore += 1; else downScore += 1;
+
+      var total = upScore + downScore || 1;
+      var upPct = Math.round(upScore / total * 100);
+      var downPct = 100 - upPct;
+
+      // 判断方向
+      var direction, dirClass, desc, movingDesc;
+      if (upScore > downScore + 2) {
+        direction = "偏涨 ▲▲"; dirClass = "up";
+        desc = "阳气充盈，卦象强势向上，短线看涨。";
+      } else if (upScore > downScore) {
+        direction = "微涨 ▲"; dirClass = "up";
+        desc = "上升动能略占上风，涨幅可能有限。";
+      } else if (downScore > upScore + 2) {
+        direction = "偏跌 ▼▼"; dirClass = "down";
+        desc = "阴气较重，卦象偏弱，短线看跌。";
+      } else if (downScore > upScore) {
+        direction = "微跌 ▼"; dirClass = "down";
+        desc = "下行压力略大，跌幅可能有限。";
+      } else {
+        direction = "震荡 ◆"; dirClass = "neutral";
+        desc = "阴阳相当，方向不明，横盘震荡概率大。";
+      }
+
+      if (movingIdx >= 0) {
+        if (lines[movingIdx].isYang) {
+          movingDesc = "第" + (movingIdx+1) + "爻老阳化阴，盛极转衰之象，注意回落风险。";
+        } else {
+          movingDesc = "第" + (movingIdx+1) + "爻老阴化阳，否极泰来之象，或有反弹机会。";
+        }
+      } else {
+        movingDesc = "无动爻，局面稳定，大概率维持当前走势。";
+      }
+
+      // 渲染: 方向标签
+      var dirDiv = document.createElement("div");
+      dirDiv.className = "prediction-direction " + dirClass;
+      dirDiv.textContent = direction;
+      container.appendChild(dirDiv);
+
+      // 渲染: 涨跌条
+      var barDiv = document.createElement("div");
+      barDiv.className = "prediction-bar";
+
+      var upLabel = document.createElement("div");
+      upLabel.className = "bar-label up-label";
+      upLabel.textContent = "涨";
+
+      var track = document.createElement("div");
+      track.className = "bar-track";
+      var fillUp = document.createElement("div");
+      fillUp.className = "bar-fill-up";
+      fillUp.style.width = upPct + "%";
+      var fillDown = document.createElement("div");
+      fillDown.className = "bar-fill-down";
+      fillDown.style.width = downPct + "%";
+      track.appendChild(fillUp);
+      track.appendChild(fillDown);
+
+      var downLabel = document.createElement("div");
+      downLabel.className = "bar-label down-label";
+      downLabel.textContent = "跌";
+
+      barDiv.appendChild(upLabel);
+      barDiv.appendChild(track);
+      barDiv.appendChild(downLabel);
+      container.appendChild(barDiv);
+
+      // 渲染: 分数
+      var scoreDiv = document.createElement("div");
+      scoreDiv.style.textAlign = "center";
+      scoreDiv.style.fontSize = "12px";
+      scoreDiv.style.color = "#8b7355";
+      scoreDiv.style.marginBottom = "12px";
+      scoreDiv.textContent = "涨 " + upScore + " 分 vs 跌 " + downScore + " 分";
+      container.appendChild(scoreDiv);
+
+      // 渲染: 解读
+      var detailDiv = document.createElement("div");
+      detailDiv.className = "prediction-detail";
+
+      var d1 = document.createElement("div");
+      d1.textContent = desc;
+      detailDiv.appendChild(d1);
+
+      var d2 = document.createElement("div");
+      d2.textContent = movingDesc;
+      detailDiv.appendChild(d2);
+
+      var d3 = document.createElement("div");
+      d3.textContent = "上卦" + BAGUA[upper].name + "(" + BAGUA[upper].nature + ") " +
+        (YANG_TRIGRAMS[upper] ? "↑阳卦主升" : "↓阴卦主降") +
+        " · 下卦" + BAGUA[lower].name + "(" + BAGUA[lower].nature + ") " +
+        (YANG_TRIGRAMS[lower] ? "↑阳卦主升" : "↓阴卦主降");
+      detailDiv.appendChild(d3);
+
+      container.appendChild(detailDiv);
+
+      // 免责声明
+      var discDiv = document.createElement("div");
+      discDiv.className = "prediction-disclaimer";
+      discDiv.textContent = "⚠ 纯属娱乐，切勿作为实际交易依据";
+      container.appendChild(discDiv);
+    }
+
+    // ═══════════════════════════════════════
     // BTC 实时卦模式
     // ═══════════════════════════════════════
     var _btcTimer = null;
@@ -2171,6 +2386,11 @@
     var _btcLastKlineStart = null;
 
     function startBtcMode() {
+      // BTC模式自动选中财运
+      currentCategory = "wealth";
+      document.querySelectorAll(".category-card").forEach(function(c) { c.classList.remove("active"); });
+      var wealthCard = document.querySelector('.category-card[data-cat="wealth"]');
+      if (wealthCard) wealthCard.classList.add("active");
       fetchBtcAndCast();
       // 每10秒检查是否有新K线
       _btcTimer = setInterval(fetchBtcAndCast, 10000);
@@ -2524,6 +2744,7 @@
       document.getElementById("history").textContent = hexData.history;
 
       renderCategoryReading(lines);
+      renderBtcPrediction(lines);
 
       document.getElementById("resultSection").scrollIntoView({ behavior: "smooth" });
     }
