@@ -2102,37 +2102,34 @@
     var BTC_PYTH_ID = "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43";
 
     function fetchBtcAndCast() {
-      var statusEl = document.getElementById("btcStatus");
-      statusEl.className = "btc-status loading";
-      statusEl.textContent = "正在获取数据...";
-
-      // 获取当前5分钟K线的开盘时间戳
       var now = Math.floor(Date.now() / 1000);
       var klineStart = Math.floor(now / 300) * 300; // 当前5分钟周期起点
 
-      // Pyth REST API: 获取K线开盘时刻的价格
-      var url = "https://hermes.pyth.network/v2/updates/price/latest?ids[]=" + BTC_PYTH_ID + "&publish_time=" + klineStart;
+      // 如果当前周期已有锁定的开盘价，只更新倒计时，不再请求API
+      if (klineStart === _btcLastKlineStart && _btcCurrentOpen !== null) {
+        return;
+      }
 
-      fetch(url)
+      var statusEl = document.getElementById("btcStatus");
+      statusEl.className = "btc-status loading";
+      statusEl.textContent = "正在获取开盘价...";
+
+      // Pyth REST API: 获取最新价格作为新K线的开盘价
+      fetch("https://hermes.pyth.network/v2/updates/price/latest?ids[]=" + BTC_PYTH_ID)
         .then(function(r) { return r.json(); })
         .then(function(data) {
-          if (!data || !data.parsed || !data.parsed[0]) {
-            // fallback: 获取最新价格
-            return fetch("https://hermes.pyth.network/v2/updates/price/latest?ids[]=" + BTC_PYTH_ID)
-              .then(function(r) { return r.json(); })
-              .then(function(d) {
-                if (!d || !d.parsed || !d.parsed[0]) throw new Error("no data");
-                return { data: d, isLatest: true };
-              });
-          }
-          return { data: data, isLatest: false };
-        })
-        .then(function(result) {
-          var p = result.data.parsed[0].price;
+          if (!data || !data.parsed || !data.parsed[0]) throw new Error("no data");
+
+          var p = data.parsed[0].price;
           var price = parseInt(p.price) * Math.pow(10, parseInt(p.expo));
 
+          // 锁定这个周期的开盘价，直到下一根K线才会更新
+          _btcLastKlineStart = klineStart;
+          _btcCurrentOpen = price;
+          _btcCurrentKlineStart = klineStart * 1000;
+
           statusEl.className = "btc-status connected";
-          statusEl.textContent = "Pyth Network · " + (result.isLatest ? "最新价格" : "开盘价格");
+          statusEl.textContent = "Pyth Network · 开盘价已锁定";
 
           // 更新价格显示
           document.getElementById("btcPriceText").textContent = "$" + price.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -2142,14 +2139,7 @@
           var timeStr = klineDate.getHours().toString().padStart(2, "0") + ":" + klineDate.getMinutes().toString().padStart(2, "0");
           document.getElementById("btcTimeText").textContent = timeStr + " 开盘";
 
-          _btcCurrentKlineStart = klineStart * 1000;
-
-          // 只在K线周期变化时重新起卦
-          if (klineStart !== _btcLastKlineStart) {
-            _btcLastKlineStart = klineStart;
-            _btcCurrentOpen = price;
-            btcCast(price, timeStr);
-          }
+          btcCast(price, timeStr);
         })
         .catch(function() {
           statusEl.className = "btc-status disconnected";
